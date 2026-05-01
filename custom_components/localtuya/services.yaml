@@ -29,6 +29,18 @@ set_dp:
       selector:
         object:
 
+health_check_status:
+  name: "Health Check Status"
+  description: Get the health check status of all devices or a specific device.
+  fields:
+    device_id:
+      name: "Device ID"
+      description: Optional Tuya device ID. If omitted, returns status for all devices.
+      required: false
+      example: 11100118278aab4de001
+      selector:
+        text:
+
 remote_add_code:
   name: "Add Remote Code"
   description: Add the remote code to the device's remote storage.

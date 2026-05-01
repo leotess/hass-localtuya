@@ -42,6 +42,7 @@ from .const import (
     DOMAIN,
     PLATFORMS,
 )
+from .health_check import HealthCheckManager
 
 from .discovery import TuyaDiscovery
 
@@ -166,10 +167,42 @@ async def async_setup(hass: HomeAssistant, config: dict):
         """Clean up resources when shutting down."""
         discovery.close()
 
+    async def _handle_health_check_status(service: ServiceCall):
+        """Handle health_check_status service call."""
+        device_id = service.data.get(CONF_DEVICE_ID)
+        current_entries = hass.config_entries.async_entries(DOMAIN)
+        result = {}
+        for entry in current_entries:
+            if entry.entry_id not in hass.data[DOMAIN]:
+                continue
+            hass_data: HassLocalTuyaData = hass.data[DOMAIN][entry.entry_id]
+            for device in hass_data.devices.values():
+                if device.is_subdevice:
+                    continue
+                if device._health_manager is None:
+                    continue
+                if device_id and device.id != device_id:
+                    continue
+                info = device._health_manager.get_health_info(device.id)
+                result[device.id] = {
+                    "name": device.friendly_name,
+                    "connected": device.connected,
+                    "health_state": info.health_state if info else "healthy",
+                    "reconnect_attempts": info.reconnect_attempts if info else 0,
+                    "cloud_fallback_active": (
+                        info.cloud_fallback_active if info else False
+                    ),
+                }
+        _LOGGER.info("Health check status: %s", result)
+
     hass.services.async_register(DOMAIN, SERVICE_RELOAD, _handle_reload)
 
     hass.services.async_register(
         DOMAIN, SERVICE_SET_DP, _handle_set_dp, schema=SERVICE_SET_DP_SCHEMA
+    )
+
+    hass.services.async_register(
+        DOMAIN, "health_check_status", _handle_health_check_status
     )
 
     discovery = TuyaDiscovery(_device_discovered)
@@ -362,10 +395,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     # Note: entry.async_on_unload items are called in LIFO order!
 
+    # Set up the health check manager.
+    health_manager = HealthCheckManager(hass, entry, hass_localtuya)
+    for device in hass_localtuya.devices.values():
+        device._health_manager = health_manager
+    health_manager.start()
+
     for dev in connect_to_devices:
         entry.async_create_task(hass, dev.async_connect())
         entry.async_on_unload(dev.close)
 
+    entry.async_on_unload(health_manager.stop)
     entry.async_on_unload(entry.add_update_listener(update_listener))
 
     async def _shutdown(event):

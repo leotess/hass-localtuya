@@ -51,6 +51,21 @@ CONF_TUYA_IP = "ip"
 CONF_TUYA_GWID = "gwId"
 CONF_TUYA_VERSION = "version"
 
+# Health Check
+CONF_HEALTH_CHECK_INTERVAL = "health_check_interval"
+HEALTH_CHECK_INTERVAL_DEFAULT = 30
+HEALTH_CHECK_MAX_RETRIES = 5
+HEALTH_CHECK_RECOVERY_INTERVAL = 3600
+
+
+class DeviceHealthState:
+    """Device health states."""
+
+    HEALTHY = "healthy"
+    CLOUD_FALLBACK = "cloud_fallback"
+    UNHEALTHY = "unhealthy"
+
+
 # Status Payloads.
 RESTORE_STATES = {"0": "restore"}
 

@@ -41,6 +41,7 @@ from .const import (
     CONF_RESTORE_ON_RECONNECT,
     CONF_SCALING,
     DOMAIN,
+    DeviceHealthState,
     RESTORE_STATES,
     DeviceConfig,
 )
@@ -248,6 +249,8 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
     @property
     def available(self) -> bool:
         """Return if device is available or not."""
+        if self._device.health_state == DeviceHealthState.CLOUD_FALLBACK:
+            return True
         return (len(self._status) > 0) or self._device.connected
 
     @property

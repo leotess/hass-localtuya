@@ -40,6 +40,7 @@ from .const import (
     DATA_DISCOVERY,
     DOMAIN,
     DeviceConfig,
+    DeviceHealthState,
     RESTORE_STATES,
 )
 
@@ -100,6 +101,7 @@ class TuyaDevice(TuyaListener, ContextualLogger):
 
         self._entities = []
 
+        self._health_manager = None  # Set by HealthCheckManager
         self._default_reset_dpids: list | None = None
         dev = self._device_config
         if reset_dps := dev.reset_dps:
@@ -394,8 +396,16 @@ class TuyaDevice(TuyaListener, ContextualLogger):
                     self.status_updated(payload)
             except (TimeoutError, Exception) as ex:
                 self.debug(f"Failed to set values {payload} --> {ex}", force=True)
+                # Attempt cloud fallback if health manager is active.
+                await self._cloud_fallback_set(payload)
         elif not self.connected:
-            self.error(f"Device is not connected.")
+            # Device not connected: try cloud fallback before reporting error.
+            if self._pending_status:
+                payload, self._pending_status = self._pending_status.copy(), {}
+                if not await self._cloud_fallback_set(payload):
+                    self.error(f"Device is not connected.")
+            else:
+                self.error(f"Device is not connected.")
 
     async def set_dp(self, state, dp_index):
         """Change value of a DP of the Tuya device."""
@@ -406,6 +416,8 @@ class TuyaDevice(TuyaListener, ContextualLogger):
         else:
             if self.is_sleep:
                 return self._pending_status.update({str(dp_index): state})
+            # Try cloud fallback when interface is unavailable.
+            await self._cloud_fallback_set({str(dp_index): state})
 
     async def set_dps(self, states):
         """Change value of a DPs of the Tuya device."""
@@ -416,6 +428,28 @@ class TuyaDevice(TuyaListener, ContextualLogger):
         else:
             if self.is_sleep:
                 return self._pending_status.update(states)
+            # Try cloud fallback when interface is unavailable.
+            await self._cloud_fallback_set(states)
+
+    @property
+    def health_state(self) -> str:
+        """Return the current health state of this device."""
+        if self._health_manager:
+            return self._health_manager.get_health_state(self.id)
+        return DeviceHealthState.HEALTHY
+
+    async def _cloud_fallback_set(self, payload: dict) -> bool:
+        """Attempt to send a command via cloud API when local connection is unavailable.
+
+        Returns True if the cloud command was sent successfully.
+        """
+        if not self._health_manager:
+            return False
+        if not self._health_manager.is_cloud_fallback(self.id):
+            return False
+
+        self.debug(f"Sending command via cloud fallback: {payload}", force=True)
+        return await self._health_manager.async_send_via_cloud(self.id, payload)
 
     async def _async_refresh(self, _now):
         if self.connected:

@@ -341,6 +341,59 @@ class TuyaCloudApi:
 
         return device_data
 
+    async def async_send_commands(
+        self, device_id: str, commands: list[dict]
+    ) -> dict | None:
+        """Send commands to a device via the Tuya Cloud API.
+
+        Args:
+            device_id: The Tuya device ID.
+            commands: List of command dicts, e.g. [{"code": "switch_1", "value": True}].
+                      Also accepts raw DP format: [{"dp_id": 1, "value": True}].
+
+        Returns:
+            The API response dict, or None on failure.
+        """
+        body = {"commands": commands}
+        resp = await self.async_make_request(
+            "POST",
+            url=f"/v1.0/devices/{device_id}/commands",
+            body=body,
+        )
+        if not resp:
+            self._logger.debug("Failed to send commands to device %s", device_id)
+            return None
+        if not resp.get("success"):
+            self._logger.debug(
+                "Cloud command failed for %s: %s - %s",
+                device_id,
+                resp.get("code"),
+                resp.get("msg"),
+            )
+        return resp
+
+    async def async_get_device_status(self, device_id: str) -> dict | None:
+        """Query current device status from the Tuya Cloud API.
+
+        Returns:
+            The API response result dict, or None on failure.
+        """
+        resp = await self.async_make_request(
+            "GET", url=f"/v1.0/devices/{device_id}/status"
+        )
+        if not resp:
+            self._logger.debug("Failed to get status for device %s", device_id)
+            return None
+        if not resp.get("success"):
+            self._logger.debug(
+                "Cloud status query failed for %s: %s - %s",
+                device_id,
+                resp.get("code"),
+                resp.get("msg"),
+            )
+            return None
+        return resp.get("result")
+
     async def async_connect(self):
         """Connect to cloudAPI"""
         if (res := await self.async_get_access_token()) and res != "ok":
